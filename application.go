@@ -1,6 +1,7 @@
 package golobal
 
 import (
+	"encoding/json"
 	"flag"
 	"github.com/labstack/echo"
 	"net/http"
@@ -9,14 +10,22 @@ import (
 
 func Start() {
 	// argument
-	port := flag.Int("port", 7308, "port number")
+	port := flag.Int("PORT", 7309, "port number")
 
 	flag.Parse()
 
 	// url
 	e := echo.New()
-	e.GET("/golobal/hash", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Hello, World!")
+	e.GET("/golobal", func(c echo.Context) error {
+		url := c.QueryParams()["url"][0]
+		hashInfo := ExtractHashInfo(url)
+
+		result, err := json.Marshal(hashInfo)
+		if err != nil {
+			return c.String(http.StatusOK, err.Error())
+		}
+
+		return c.String(http.StatusOK, string(result))
 	})
 
 	// start

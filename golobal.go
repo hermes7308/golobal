@@ -7,10 +7,17 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
+
+// default temp file directory
+const DEFAULT_FILE_DIRECTORY_PATH = "/tmp/"
 
 // extension constants
 const (
@@ -19,6 +26,15 @@ const (
 	JPG  = ".jpg"
 	PNG  = ".png"
 )
+
+// hash info
+type HashInfo struct {
+	Url    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	Hash   int64  `json:"hash"`
+	Err    string `json:"err"`
+}
 
 // hash constants
 const (
@@ -204,8 +220,8 @@ func ExtractRGB(image image.Image) ([]uint32, []uint32, []uint32) {
 	return red, green, blue
 }
 
-func ExtractGlobalHash(fileName string) (int64, error) {
-	srcImage, err := GetImage(fileName)
+func ExtractGlobalHash(url string) (int64, error) {
+	srcImage, err := GetImage(url)
 	if err != nil {
 		return HASH_EXTRACTION_FAIL, err
 	}
@@ -221,4 +237,52 @@ func ExtractGlobalHash(fileName string) (int64, error) {
 
 	// extract global hash
 	return GetGlobalHash(grayBlock, HASH_SIZE), nil
+}
+
+func ExtractHashInfo(url string) HashInfo {
+	// get image info
+	response, err := http.Get(url)
+	if err != nil {
+		return HashInfo{Url: url, Err: err.Error()}
+	}
+	defer response.Body.Close()
+
+	// create temp image directory
+	err = os.MkdirAll(DEFAULT_FILE_DIRECTORY_PATH, os.ModeDir)
+	if err != nil {
+		return HashInfo{Url: url, Err: err.Error()}
+	}
+
+	// create temp image file
+	tempFileName := DEFAULT_FILE_DIRECTORY_PATH + strconv.Itoa(time.Now().Nanosecond())
+	imageFile, err := os.Create(tempFileName)
+	if err != nil {
+		return HashInfo{Url: url, Err: err.Error()}
+	}
+	defer os.Remove(tempFileName)
+
+	// copy image file
+	_, err = io.Copy(imageFile, response.Body)
+	if err != nil {
+		return HashInfo{Url: url, Err: err.Error()}
+	}
+
+	// get global hash
+	globalHash, err := ExtractGlobalHash(tempFileName)
+	if err != nil {
+		return HashInfo{Url: url, Err: err.Error()}
+	}
+
+	tempImage, err := GetImage(tempFileName)
+	if err != nil {
+		return HashInfo{Url: url, Err: err.Error()}
+	}
+
+	return HashInfo{
+		Url:    url,
+		Hash:   globalHash,
+		Width:  tempImage.Bounds().Max.X,
+		Height: tempImage.Bounds().Max.Y,
+		Err:    "SUCCESS",
+	}
 }
