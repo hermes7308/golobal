@@ -43,11 +43,10 @@ type HashInfo struct {
 
 // hash constants
 const (
-	HASH_SIZE            = 55
-	RESIZE_WIDTH         = 150
-	RESIZE_HEIGHT        = 200
-	NGRAYBLOCK           = 85
-	HASH_EXTRACTION_FAIL = -1
+	HASH_SIZE     = 55
+	RESIZE_WIDTH  = 150
+	RESIZE_HEIGHT = 200
+	NGRAYBLOCK    = 85
 )
 
 var MEAN = []float32{
