@@ -74,6 +74,138 @@ var MEAN = []float32{
 	137.2, 146.3, 142.2, 141.9,
 	142.2, 141.4, 144.8}
 
+func ExtractHashInfo(url string) HashInfo {
+	downloadedImage, err := DownloadImage(url)
+	if err != nil {
+		return HashInfo{Url: url, Message: err.Error()}
+	}
+
+	// get global hash
+	globalHash, err := ExtractGlobalHash(downloadedImage)
+	if err != nil {
+		return HashInfo{Url: url, Message: err.Error()}
+	}
+
+	return HashInfo{
+		Url:     url,
+		Hash:    globalHash,
+		Width:   downloadedImage.Bounds().Max.X,
+		Height:  downloadedImage.Bounds().Max.Y,
+		Message: "SUCCESS",
+	}
+}
+
+func DownloadImage(url string) (image.Image, error) {
+	// get image info
+	response, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	// create temp image directory
+	err = os.MkdirAll(DEFAULT_FILE_DIRECTORY_PATH, os.ModeDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// get path
+	path, err := GetPath(url)
+	if err != nil {
+		return nil, err
+	}
+
+	// get extension
+	tempFileName := DEFAULT_FILE_DIRECTORY_PATH + strconv.Itoa(time.Now().Nanosecond()) + GetExtension(path)
+
+	// create temp image file
+	imageFile, err := os.Create(tempFileName)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tempFileName)
+
+	_, err = io.Copy(imageFile, response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// copy image file
+	downloadedImage, err := GetImage(tempFileName)
+	if err != nil {
+		return nil, err
+	}
+
+	return downloadedImage, nil
+}
+
+func GetPath(urlPath string) (string, error) {
+	urlInfo, err := url.Parse(urlPath)
+	if err != nil {
+		return "", err
+	}
+
+	return urlInfo.Path, nil
+}
+
+func GetImage(filePath string) (image.Image, error) {
+	imageFile, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer imageFile.Close()
+
+	switch GetExtension(filePath) {
+	case BMP:
+		return bmp.Decode(imageFile)
+	case TIFF:
+		return tiff.Decode(imageFile)
+	case GIF:
+		return gif.Decode(imageFile)
+	case PNG:
+		return png.Decode(imageFile)
+	case JPEG:
+		fallthrough
+	case JPG:
+		return jpeg.Decode(imageFile)
+	default:
+		return jpeg.Decode(imageFile)
+	}
+}
+
+func GetExtension(path string) string {
+	return strings.ToLower(filepath.Ext(path))
+}
+
+func ExtractGlobalHash(srcImage image.Image) (int64, error) {
+	// resize
+	resizeImage := resize.Resize(RESIZE_WIDTH, RESIZE_HEIGHT, srcImage, resize.Bilinear)
+
+	// extract RGB
+	red, green, blue := ExtractRGB(resizeImage)
+
+	// get gray block
+	grayBlock := GetGrayBlock(red, green, blue, resizeImage.Bounds().Max.X, resizeImage.Bounds().Max.Y)
+
+	// extract global hash
+	return GetGlobalHash(grayBlock, HASH_SIZE), nil
+}
+
+func ExtractRGB(image image.Image) ([]uint32, []uint32, []uint32) {
+	red := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
+	green := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
+	blue := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
+
+	for row := 0; row < image.Bounds().Max.Y; row++ {
+		for col := 0; col < image.Bounds().Max.X; col++ {
+			index := row*image.Bounds().Max.X + col
+			red[index], green[index], blue[index], _ = image.At(col, row).RGBA()
+		}
+	}
+
+	return red, green, blue
+}
+
 func GetGrayBlock(red, green, blue []uint32, width, height int) []float32 {
 	var numBlock int
 	var xaxisSize int
@@ -181,131 +313,4 @@ func CalculateHashValue(result []float32, hashSize int) int64 {
 	}
 
 	return hashValue
-}
-
-func GetImage(fileName string) (image.Image, error) {
-	imageFile, err := os.Open(fileName)
-	if err != nil {
-		return nil, err
-	}
-	defer imageFile.Close()
-
-	switch GetExtension(fileName) {
-	case BMP:
-		return bmp.Decode(imageFile)
-	case TIFF:
-		return tiff.Decode(imageFile)
-	case GIF:
-		return gif.Decode(imageFile)
-	case PNG:
-		return png.Decode(imageFile)
-	case JPEG:
-		fallthrough
-	case JPG:
-		return jpeg.Decode(imageFile)
-	default:
-		return jpeg.Decode(imageFile)
-	}
-}
-
-func ExtractRGB(image image.Image) ([]uint32, []uint32, []uint32) {
-	red := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
-	green := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
-	blue := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
-
-	for row := 0; row < image.Bounds().Max.Y; row++ {
-		for col := 0; col < image.Bounds().Max.X; col++ {
-			index := row*image.Bounds().Max.X + col
-			red[index], green[index], blue[index], _ = image.At(col, row).RGBA()
-		}
-	}
-
-	return red, green, blue
-}
-
-func ExtractGlobalHash(url string) (int64, error) {
-	srcImage, err := GetImage(url)
-	if err != nil {
-		return HASH_EXTRACTION_FAIL, err
-	}
-
-	// resize
-	resizeImage := resize.Resize(RESIZE_WIDTH, RESIZE_HEIGHT, srcImage, resize.Bilinear)
-
-	// extract RGB
-	red, green, blue := ExtractRGB(resizeImage)
-
-	// get gray block
-	grayBlock := GetGrayBlock(red, green, blue, resizeImage.Bounds().Max.X, resizeImage.Bounds().Max.Y)
-
-	// extract global hash
-	return GetGlobalHash(grayBlock, HASH_SIZE), nil
-}
-
-func ExtractHashInfo(url string) HashInfo {
-	// get image info
-	response, err := http.Get(url)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-	defer response.Body.Close()
-
-	// create temp image directory
-	err = os.MkdirAll(DEFAULT_FILE_DIRECTORY_PATH, os.ModeDir)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-
-	// create temp image file
-	// get path
-	path, err := GetPath(url)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-
-	// get extension
-	tempFileName := DEFAULT_FILE_DIRECTORY_PATH + strconv.Itoa(time.Now().Nanosecond()) + GetExtension(path)
-	imageFile, err := os.Create(tempFileName)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-	defer os.Remove(tempFileName)
-
-	// copy image file
-	_, err = io.Copy(imageFile, response.Body)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-
-	// get global hash
-	globalHash, err := ExtractGlobalHash(tempFileName)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-
-	tempImage, err := GetImage(tempFileName)
-	if err != nil {
-		return HashInfo{Url: url, Message: err.Error()}
-	}
-
-	return HashInfo{
-		Url:     url,
-		Hash:    globalHash,
-		Width:   tempImage.Bounds().Max.X,
-		Height:  tempImage.Bounds().Max.Y,
-		Message: "SUCCESS",
-	}
-}
-
-func GetPath(urlPath string) (string, error) {
-	urlInfo, err := url.Parse(urlPath)
-	if err != nil {
-		return "", err
-	}
-
-	return urlInfo.Path, nil
-}
-
-func GetExtension(path string) string {
-	return strings.ToLower(filepath.Ext(path))
 }
