@@ -1,12 +1,32 @@
-package generator
+package golobal
 
-import "github.com/hermes7308/golobal/symmetric"
+import (
+	"github.com/hermes7308/golobal/symmetric"
+	"github.com/nfnt/resize"
+	"image"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
+// extension constants
 const (
-	HASH_SIZE     = 55
-	RESIZE_WIDTH  = 150
-	RESIZE_HEIGHT = 200
-	NGRAYBLOCK    = 85
+	GIF  = ".gif"
+	JPEG = ".jpeg"
+	JPG  = ".jpg"
+	PNG  = ".png"
+)
+
+// hash constants
+const (
+	HASH_SIZE            = 55
+	RESIZE_WIDTH         = 150
+	RESIZE_HEIGHT        = 200
+	NGRAYBLOCK           = 85
+	HASH_EXTRACTION_FAIL = -1
 )
 
 var MEAN = []float32{
@@ -33,7 +53,7 @@ var MEAN = []float32{
 	137.2, 146.3, 142.2, 141.9,
 	142.2, 141.4, 144.8}
 
-func GetGrayBlock(imageBytes []uint8, width int, height int) []float32 {
+func GetGrayBlock(red, green, blue []uint32, width, height int) []float32 {
 	var numBlock int
 	var xaxisSize int
 	var yaxisSize int
@@ -67,11 +87,11 @@ func GetGrayBlock(imageBytes []uint8, width int, height int) []float32 {
 			pixelN[j] = 0
 		}
 
-		for y := 0; y < pixelCnt; y += 3 {
+		for y := 0; y < pixelCnt; y++ {
 			// grayResult = (float) (red[y] + green[y] + blue[y]) / (float) 3.0;
-			blue := imageBytes[y+0]
-			green := imageBytes[y+1]
-			red := imageBytes[y+2]
+			red := red[y]
+			green := green[y]
+			blue := blue[y]
 
 			grayResult = float32(int((blue + green + red) / 3))
 			xaxisIndex = y % width
@@ -144,4 +164,61 @@ func CalculateHashValue(result []float32, hashSize int) int64 {
 	}
 
 	return hashValue
+}
+
+func GetImage(fileName string) (image.Image, error) {
+	imageFile, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+	defer imageFile.Close()
+
+	extension := strings.ToLower(filepath.Ext(fileName))
+	switch extension {
+	case GIF:
+		return gif.Decode(imageFile)
+	case JPEG:
+		fallthrough
+	case JPG:
+		return jpeg.Decode(imageFile)
+	case PNG:
+		return png.Decode(imageFile)
+	default:
+		// default image type png
+		return png.Decode(imageFile)
+	}
+}
+
+func ExtractRGB(image image.Image) ([]uint32, []uint32, []uint32) {
+	red := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
+	green := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
+	blue := make([]uint32, image.Bounds().Max.X*image.Bounds().Bounds().Max.Y)
+
+	for row := 0; row < image.Bounds().Max.Y; row++ {
+		for col := 0; col < image.Bounds().Max.X; col++ {
+			index := row*image.Bounds().Max.X + col
+			red[index], green[index], blue[index], _ = image.At(col, row).RGBA()
+		}
+	}
+
+	return red, green, blue
+}
+
+func ExtractGlobalHash(fileName string) (int64, error) {
+	srcImage, err := GetImage(fileName)
+	if err != nil {
+		return HASH_EXTRACTION_FAIL, err
+	}
+
+	// resize
+	resizeImage := resize.Resize(RESIZE_WIDTH, RESIZE_HEIGHT, srcImage, resize.Bilinear)
+
+	// extract RGB
+	red, green, blue := ExtractRGB(resizeImage)
+
+	// get gray block
+	grayBlock := GetGrayBlock(red, green, blue, resizeImage.Bounds().Max.X, resizeImage.Bounds().Max.Y)
+
+	// extract global hash
+	return GetGlobalHash(grayBlock, HASH_SIZE), nil
 }
