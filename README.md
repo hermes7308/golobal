@@ -1,5 +1,5 @@
 # Golobal
-This Global Hash Generator extract global hash.
+If you want to extract hash from image, Golobal can be able to help you.
 
 # Dependency
 
