@@ -3,6 +3,8 @@ package golobal
 import (
 	"github.com/hermes7308/golobal/symmetric"
 	"github.com/nfnt/resize"
+	"golang.org/x/image/bmp"
+	"golang.org/x/image/tiff"
 	"image"
 	"image/gif"
 	"image/jpeg"
@@ -26,6 +28,8 @@ const (
 	JPEG = ".jpeg"
 	JPG  = ".jpg"
 	PNG  = ".png"
+	TIFF = ".tiff"
+	BMP  = ".bmp"
 )
 
 // hash info
@@ -106,11 +110,7 @@ func GetGrayBlock(red, green, blue []uint32, width, height int) []float32 {
 
 		for y := 0; y < pixelCnt; y++ {
 			// grayResult = (float) (red[y] + green[y] + blue[y]) / (float) 3.0;
-			red := red[y]
-			green := green[y]
-			blue := blue[y]
-
-			grayResult = float32(int((blue + green + red) / 3))
+			grayResult = float32(int((blue[y] + green[y] + red[y]) / 3))
 			xaxisIndex = y % width
 			yaxisIndex = y / width
 			xaxisIndex /= xaxisSize
@@ -191,17 +191,20 @@ func GetImage(fileName string) (image.Image, error) {
 	defer imageFile.Close()
 
 	switch GetExtension(fileName) {
+	case BMP:
+		return bmp.Decode(imageFile)
+	case TIFF:
+		return tiff.Decode(imageFile)
 	case GIF:
 		return gif.Decode(imageFile)
+	case PNG:
+		return png.Decode(imageFile)
 	case JPEG:
 		fallthrough
 	case JPG:
 		return jpeg.Decode(imageFile)
-	case PNG:
-		return png.Decode(imageFile)
 	default:
-		// default image type png
-		return png.Decode(imageFile)
+		return jpeg.Decode(imageFile)
 	}
 }
 

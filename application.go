@@ -9,11 +9,6 @@ import (
 )
 
 func Start() {
-	// argument
-	port := flag.Int("PORT", 7309, "port number")
-
-	flag.Parse()
-
 	// url
 	e := echo.New()
 	e.GET("/golobal", func(c echo.Context) error {
@@ -27,6 +22,10 @@ func Start() {
 
 		return c.String(http.StatusOK, string(result))
 	})
+
+	// argument
+	port := flag.Int("PORT", 7308, "port number")
+	flag.Parse()
 
 	// start
 	e.Logger.Fatal(e.Start(":" + strconv.Itoa(*port)))
