@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,11 +30,11 @@ const (
 
 // hash info
 type HashInfo struct {
-	Url    string `json:"url"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	Hash   int64  `json:"hash"`
-	Err    string `json:"err"`
+	Url     string `json:"url"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Hash    int64  `json:"hash"`
+	Message string `json:"message"`
 }
 
 // hash constants
@@ -189,8 +190,7 @@ func GetImage(fileName string) (image.Image, error) {
 	}
 	defer imageFile.Close()
 
-	extension := strings.ToLower(filepath.Ext(fileName))
-	switch extension {
+	switch GetExtension(fileName) {
 	case GIF:
 		return gif.Decode(imageFile)
 	case JPEG:
@@ -243,46 +243,66 @@ func ExtractHashInfo(url string) HashInfo {
 	// get image info
 	response, err := http.Get(url)
 	if err != nil {
-		return HashInfo{Url: url, Err: err.Error()}
+		return HashInfo{Url: url, Message: err.Error()}
 	}
 	defer response.Body.Close()
 
 	// create temp image directory
 	err = os.MkdirAll(DEFAULT_FILE_DIRECTORY_PATH, os.ModeDir)
 	if err != nil {
-		return HashInfo{Url: url, Err: err.Error()}
+		return HashInfo{Url: url, Message: err.Error()}
 	}
 
 	// create temp image file
-	tempFileName := DEFAULT_FILE_DIRECTORY_PATH + strconv.Itoa(time.Now().Nanosecond())
+	// get path
+	path, err := GetPath(url)
+	if err != nil {
+		return HashInfo{Url: url, Message: err.Error()}
+	}
+
+	// get extension
+	tempFileName := DEFAULT_FILE_DIRECTORY_PATH + strconv.Itoa(time.Now().Nanosecond()) + GetExtension(path)
 	imageFile, err := os.Create(tempFileName)
 	if err != nil {
-		return HashInfo{Url: url, Err: err.Error()}
+		return HashInfo{Url: url, Message: err.Error()}
 	}
 	defer os.Remove(tempFileName)
 
 	// copy image file
 	_, err = io.Copy(imageFile, response.Body)
 	if err != nil {
-		return HashInfo{Url: url, Err: err.Error()}
+		return HashInfo{Url: url, Message: err.Error()}
 	}
 
 	// get global hash
 	globalHash, err := ExtractGlobalHash(tempFileName)
 	if err != nil {
-		return HashInfo{Url: url, Err: err.Error()}
+		return HashInfo{Url: url, Message: err.Error()}
 	}
 
 	tempImage, err := GetImage(tempFileName)
 	if err != nil {
-		return HashInfo{Url: url, Err: err.Error()}
+		return HashInfo{Url: url, Message: err.Error()}
 	}
 
 	return HashInfo{
-		Url:    url,
-		Hash:   globalHash,
-		Width:  tempImage.Bounds().Max.X,
-		Height: tempImage.Bounds().Max.Y,
-		Err:    "SUCCESS",
+		Url:     url,
+		Hash:    globalHash,
+		Width:   tempImage.Bounds().Max.X,
+		Height:  tempImage.Bounds().Max.Y,
+		Message: "SUCCESS",
 	}
+}
+
+func GetPath(urlPath string) (string, error) {
+	urlInfo, err := url.Parse(urlPath)
+	if err != nil {
+		return "", err
+	}
+
+	return urlInfo.Path, nil
+}
+
+func GetExtension(path string) string {
+	return strings.ToLower(filepath.Ext(path))
 }
